@@ -2,25 +2,54 @@ import express from 'express';
 import cors from 'cors';
 import 'dotenv/config';
 import connectDB from './configs/db.js';
-import { clerkMiddleware } from '@clerk/express'
+import { clerkMiddleware } from '@clerk/express';
 import { serve } from "inngest/express";
-import { inngest, functions } from "./inngest/index.js"
-
+import { inngest, functions } from "./inngest/index.js";
+import showRouter from './routes/showRoutes.js';
+import bookingRouter from './routes/boookingRoutes.js';
+import adminRouter from './routes/adminRoutes.js';
+import userRouter from './routes/userRoutes.js';
+import { stripeWebhooks } from './controllers/stripeWebhooks.js';
 
 const app = express();
 const port = 3000;
 
-await connectDB()
+// Database connection with error handling
+async function startServer() {
+  try {
+    await connectDB(); 
+    console.log("Database connected");
 
+    // ⚠️ Stripe webhook BEFORE body parser
+    app.use('/api/stripe', express.raw({ type: 'application/json' }), stripeWebhooks);
 
+    // Middleware
+    app.use(express.json());
+    app.use(cors());
+    app.use(clerkMiddleware());
 
-// Middleware
-app.use(express.json());
-app.use(cors())
-app.use(clerkMiddleware())
+    // API Routes
+    app.get('/', (req, res) => res.send('Server is live!'));
+    app.use('/api/inngest', serve({ client: inngest, functions }));
+    app.use('/api/show', showRouter);
+    app.use('/api/booking', bookingRouter);
+    app.use('/api/admin', adminRouter);
+    app.use('/api/user', userRouter);
 
-// API Routes
-app.get('/', (req, res) => res.send('Server is live!'));
-app.use('/api/inngest', serve({ client: inngest, functions }));
+    // Global error handler
+    app.use((err, req, res, next) => {
+      console.error(err);
+      res.status(500).json({ success: false, message: "Something went wrong!" });
+    });
 
-app.listen(port, () => console.log(`Server listening at http://localhost:${port}`));
+    // Start the server
+    app.listen(port, () => console.log(`✅ Server running at http://localhost:${port}`));
+
+  } catch (error) {
+    console.error("❌ Database connection failed:", error);
+    process.exit(1);
+  }
+}
+
+// Start the server
+startServer();
